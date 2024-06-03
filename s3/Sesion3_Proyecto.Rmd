@@ -1,0 +1,144 @@
+---
+title: "Defunciones por cáncer en México"
+output: html_document
+always_allow_html: true
+date: "2024-06-04"
+author: "Estudiante"
+---
+
+```{r preparacion, echo = FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+
+library(tidyverse)
+estado <- read_csv("./datos_filtrados.csv")
+nacional <- read_csv("./nacional_filtrados.csv")
+```
+
+# Instrucciones
+
+Este reporte trata sobre las defunciones por cáncer en México, y se está enfocando en defunciones para un estado en particular. La idea es que las estudiantes realicen su propio análisis de los datos disponibles, pero se pueden ofrecer las siguientes pautas para dar una orientación al trabajo:
+
+## Introducción
+
+* Presentar una introducción haciendo referencia al cáncer, tipos del mismo y prevalencia en México según cifras oficiales. Informar que estos datos corresponden a base de datos abiertos en [Mortalidad de INEGI](https://www.inegi.org.mx/programas/mortalidad/#datos_abiertos) para el año 2021.
+
+## Resultados
+
+* Presentar un comparativo a nivel nacional (gráfico de barras) para ver el número de defunciones de cáncer para hombres y mujeres. Interpretar resultados.
+  + Considerar la clave para identificar sexo es 1 para Hombre, 2 para Mujer y 9 para No especificado.
+
+* Presentar gráfico de calor para comparar el número de defunciones de cáncer en los diferentes estados del país y por sexo. Interpretar resultados.
+
+* Presentar un gráfico de barras para comparar el número de defunciones de cada tipo de cáncer en el estado seleccionado por el usuario. Se usará la columna *"causa_def"* como base para este resumen de información. La interpretación se hace junto con la siguiente tabla.
+
+* Presentar una tabla que indique el número de defunciones para cada tipo de cáncer en la entidad seleccionada por el usuario. Se usará la columna *"causa_def"* como base para este resumen de información. Interpretar resultados.
+
+* Calcular una columna de edad (*"anio_ocur"* - *"anio_nacim"*) y una gráfica de grupo etario (e.g. cada 20 años). Presentar una gráfica de calor en donde se compare el número de defunciones por grupo etario y sexo en el estado seleccionado por el usuario. Interpretar resultados.
+
+* Es importante resaltar que el reporte se hace de manera automática, entonces la interpretación **(sobre todo en los datos por estado)** debe utilizar secciones de código que extraigan valores de los juegos de datos e incluso sentencias `ifelse`, para mantenerse apegada a las cifras.
+
+## Conclusión
+
+* Dictar alguna sugerencia general sobre el estado de salud de la gente en el país, o bien hacer alguna última comparación entre los números de defunciones a nivel estado y a nivel nacional. 
+
+# Códigos de ejemplo
+
+* Comparativa nacional por sexo
+
+```{r defun_nacional_sexo, echo=FALSE}
+nacional |> 
+  group_by(sexo) |> 
+  summarise(cuenta = n()) |> 
+  mutate(sexo = factor(sexo, 
+                       levels = c(1,2,9),
+                       labels = c("Hombre", "Mujer", "No especificado"))) |> 
+  ggplot(aes(x = sexo, y = cuenta, fill = sexo))+
+  geom_col()+
+  labs(title = "Defunciones por cáncer en hombres y mujeres",
+       x = "Sexo",
+       y = "Defunciones")
+```
+
+* Comparativa nacional por estados y por sexo
+  + Se puede filtrar Sexo No especificado, para que la gráfica tenga mejor presentación.
+
+```{r defun_nacional_estados_sexo, echo = FALSE, message=FALSE}
+nacional |> 
+    mutate(sexo = factor(sexo, 
+                       levels = c(1,2,9),
+                       labels = c("Hombre", "Mujer", "No especificado"))) |>
+  filter(sexo != "No especificado") |> 
+  group_by(ENTIDAD, sexo) |> 
+  summarise(cuenta = n()) |> 
+  ggplot(aes(x = sexo, y = ENTIDAD, fill = cuenta))+
+  geom_tile()+
+  scale_fill_continuous(type = "viridis")
+```
+
+* Gráfico de barras para el estado seleccionado.
+  + Debido a la cantidad de categorías de tipos de cáncer disponibles, se recomienda hacer esta gráfica interactiva con plotly, para poder obtener algo de información de su visualización.
+
+```{r defun_estado_ tipocancer_grafica}
+plot1 <- estado |> 
+  group_by(causa_def) |> 
+  summarise(cuenta = n()) |> 
+  ggplot(aes(x = causa_def, y = cuenta, fill = causa_def))+
+  geom_bar(stat = "identity", color = "white")+
+  #coord_polar(theta = "y")+
+  theme(legend.position = "none")+
+  labs(title = "Defunciones por cada tipo de cáncer",
+       x = "Tipo de cáncer",
+       y = "Defunciones")
+
+plotly::ggplotly(plot1)
+```
+
+* Tabla de defunciones por cada tipo de cáncer
+
+```{r defun_estado_tipocancer_tabla}
+tabla1 <- estado |> 
+  group_by(causa_def) |> 
+  summarise(cuenta = n()) |> 
+  arrange(desc(cuenta)) 
+
+tabla1 |> 
+  DT::datatable()
+```
+
+* **Ejemplo de interpretación:** El tipo de cáncer que más muertes causa en el estado de `r stringr::str_to_title(estado[1,8])` es `r tabla1[1,1]` con un total de `r tabla1[1,2]` defunciones. Le siguen `r tabla1[2,1]`, `r tabla1[3,1]`, `r tabla1[4,1]` y `r tabla1[5,1]`, con `r tabla1[2,2]`, `r tabla1[3,2]`, `r tabla1[4,2]` y `r tabla1[5,2]` defunciones, respectivamente.
+  
+* Defunciones por edad y sexo
+
+```{r defun_estado_edadsexo}
+defun_sexo_edad <- estado |> 
+  filter(as.numeric(anio_nacim) != 9999) |>
+  filter(as.numeric(anio_ocur) != 9999) |> 
+  mutate(edad = as.numeric(anio_ocur) - as.numeric(anio_nacim),
+         grupo_edad = edad %/% 10 * 10) |>
+         #grupo_edad = paste0(grupo_edad, "s")) |> 
+  group_by(grupo_edad, sexo) |> 
+  summarise(cuenta = n()) |> 
+  mutate(grupo_edad = paste0(grupo_edad, "s"),
+         sexo = factor(sexo, 
+                       levels = c(1,2,9),
+                       labels = c("Hombre", "Mujer", "No especificado")))
+
+defun_sexo_edad |> 
+  ggplot(aes(x = sexo, y = grupo_edad, fill = cuenta))+
+  geom_tile()+
+  scale_fill_continuous(type = "viridis")+
+  labs(title = "Defunciones por sexo y grupo de edad",
+       x = "Sexo",
+       y = "Defunciones")
+```
+
+```{r defun_estado_sexoedad_interpretacion}
+interpretacion <- defun_sexo_edad |> 
+  arrange(desc(cuenta))
+sexo1 <- ifelse(interpretacion[1,2] == "Mujer", "mujeres", "hombres")
+sexo2 <- ifelse(interpretacion[2,2] == "Mujer", "mujeres", "hombres")
+sexo3 <- ifelse(interpretacion[3,2] == "Mujer", "mujeres", "hombres")
+```
+
+* **Ejemplo de interpretación:** El grupo poblacional que registra mayor número de defunciones por cáncer son `r sexo1` viviendo hasta pasados los `r interpretacion[1,1]`. Le siguen `r sexo2` en sus `r interpretacion[2,1]` y por último `r sexo3` en sus `r interpretacion[3,1]`. Entre estos tres grupos suman `r sum(interpretacion[1,3], interpretacion[2,3],interpretacion[3,3])` decesos, que equivalen al `r sum(interpretacion[1,3], interpretacion[2,3],interpretacion[3,3]) / sum(interpretacion$cuenta) * 100`% del total de defunciones por cáncer en `r stringr::str_to_title(estado[1,"ENTIDAD"])`.
+
